@@ -12,13 +12,19 @@ docker build -t tofsegmentation:latest .
 Execute the container using the command below, adjusting the paths as needed for your environment:
 
 ```bash
-docker run --gpus all -v /path/to/input/data:/in -v /path/to/output/data:/out -v /path/to/model:/model  tofsegmentation:latest \
+docker run --gpus 0 -v /path/to/input/data:/in -v /path/to/output/data:/out -v /path/to/model:/model  tofsegmentation:latest \
     --src_path /in --dst_path /out --model_path /model \
     --filter_series csBTFE_M2D --num_workers 4
 ```
 * ***/path/to/input/data***: Local directory containing input MRI data.
 * ***/path/to/output/data***: Local directory where the results will be saved.
 * ***/path/to/model/file***: Local directory to the trained model file.
+
+To view all available commands and options, run the following command:
+```bash
+docker run tofsegmentation:latest -h
+```
+
 
 ### Output Details:
 The results will be organized in the output folder under the following structure:
@@ -45,6 +51,45 @@ In the root of the output folder, you will find a CSV file named CMR_quantificat
 
 
 Adjust the command and paths according to your specific data and model setup.
+
+
+
+# Download and Prepare the Model
+
+## 1. Download the model
+Access the model using the following link:
+[Insert Link Here]
+
+## 2. Extract the Model
+Unzip the downloaded main_folder.zip file:
+
+```bash
+unzip main_folder.zip
+```
+
+## 3. Set the Docker Mount Path
+Ensure the extracted folder is accessible by the Docker container. When running the container, mount the directory as follows:
+
+```bash
+-v /path/to/main_folder:/model
+```
+
+---
+
+## Reference
+This work builds upon the methodology described in:
+Automated biventricular quantification in patients with repaired tetralogy of Fallot using a 3D deep learning segmentation model
+***Tilborghs, Sofie et al.***
+Journal of Cardiovascular Magnetic Resonance, Volume 0, Issue 0, 101092.
+
+
+
+
+
+Je zei:
+For help and to see all 
+
+
 
 
 
