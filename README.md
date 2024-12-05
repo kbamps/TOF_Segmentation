@@ -58,7 +58,7 @@ Adjust the command and paths according to your specific data and model setup.
 
 ## 1. Download the model
 Access the model using the following link:
-[Insert Link Here]
+[model](https://github.com/kbamps/TOF_Segmentation/releases/download/0.1.0/main_folder.7z)
 
 ## 2. Extract the Model
 Unzip the downloaded main_folder.zip file:
