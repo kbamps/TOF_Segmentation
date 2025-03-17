@@ -8,7 +8,7 @@ RUN mkdir -p /out
 
 
 # Install any required Python packages using pip.
-RUN pip install pylibjpeg
+RUN pip install pylibjpeg pylibjpeg-libjpeg
 RUN pip install opencv-python-headless
 RUN pip install tqdm
 
