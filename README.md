@@ -18,7 +18,7 @@ docker run --gpus 0 -v /path/to/input/data:/in -v /path/to/output/data:/out -v /
 ```
 * ***/path/to/input/data***: Local directory containing input MRI data.
 * ***/path/to/output/data***: Local directory where the results will be saved.
-* ***/path/to/model/file***: Local directory to the trained model file.
+* ***/path/to/model/***: Local directory to the trained model.
 
 To view all available commands and options, run the following command:
 ```bash
@@ -58,7 +58,7 @@ Adjust the command and paths according to your specific data and model setup.
 
 ## 1. Download the model
 Access the model using the following link:
-[Insert Link Here]
+[model](https://github.com/kbamps/TOF_Segmentation/releases/download/0.1.0/main_folder.7z)
 
 ## 2. Extract the Model
 Unzip the downloaded main_folder.zip file:
@@ -77,24 +77,7 @@ Ensure the extracted folder is accessible by the Docker container. When running 
 ---
 
 ## Reference
-This work builds upon the methodology described in:
+This work is described in:
 Automated biventricular quantification in patients with repaired tetralogy of Fallot using a 3D deep learning segmentation model
 ***Tilborghs, Sofie et al.***
 Journal of Cardiovascular Magnetic Resonance, Volume 0, Issue 0, 101092.
-
-
-
-
-
-Je zei:
-For help and to see all 
-
-
-
-
-
-
-
-
-
-
