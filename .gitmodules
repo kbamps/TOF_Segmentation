@@ -1,0 +1,3 @@
+[submodule "DicomOrganizer"]
+	path = DicomOrganizer
+	url = git@gitlab.kuleuven.be:u0125842/dicomorganizer.git
