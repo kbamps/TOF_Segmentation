@@ -1,9 +1,12 @@
 import json
+import multiprocessing
 import os
+from pathlib import Path
 import sys
 import cv2
 import nibabel as nib
 import glob
+import pandas as pd
 import pydicom
 import numpy as np
 import scipy.io
@@ -12,6 +15,7 @@ import csv
 
 
 from deepvoxnet2.components.mirc import Mirc, Dataset, Case, Record, NiftyFileModality
+from dicomorganizer.utils import create_dicommanager_filter, extract_format
 sys.path.append(os.getcwd())
 from deepvoxnet2.components.mirc import Mirc
 from deepvoxnet2.components.sampler import MircSampler
@@ -345,7 +349,7 @@ def predict_patient(patient_id, ref_spacing, ref_size, csv_file, dcminfo, out_pa
     pred_orig_cat = np.array(pred_orig_cat)
     volumes = np.sum(pred_orig_cat[:,:,:,:,1:],axis=(1,2,3) ) * np.prod(vox_spacing) / 10e2
 
-    nib.save(nib.Nifti1Image(volumes, affine_orig), os.path.join(out_path, 'predicted_TOF.nii.gz'))
+    nib.save(nib.Nifti1Image(volumes, affine_orig), os.path.join(out_path, 'contours_AI.nii.gz'))
 
     LV_volumes = volumes[:,0]
     RV_volumes = volumes[:,2]
@@ -391,39 +395,54 @@ def predict_patient(patient_id, ref_spacing, ref_size, csv_file, dcminfo, out_pa
         'RV_mass': MASS_RV.item()
     }
 
-    # Save the list of data dictionaries as a JSON file
-    json_file = os.path.join(args.dst_path,'results','meta_results.json')
-    with open(json_file, 'w') as file:
-        json.dump(data, file, indent=4)
+    # # Save the list of data dictionaries as a JSON file
+    # json_file = os.path.join(args.dst_path,'results','meta_results.json')
+    # with open(json_file, 'w') as file:
+    #     json.dump(data, file, indent=4)
 
     ## postprocessing convert contours to png
-    original_image_paths = glob.glob(os.path.join(preprocessed_image_dir,"*", "original_*"))
-    predicted_image_paths = glob.glob(os.path.join(out_path,'predicted_images', "*.nii.gz"))
-    convert2png(original_image_paths, predicted_image_paths,out_path)
+    # original_image_paths = glob.glob(os.path.join(preprocessed_image_dir,"*", "original_*"))
+    # predicted_image_paths = glob.glob(os.path.join(out_path,'predicted_images', "*.nii.gz"))
+    # convert2png(original_image_paths, predicted_image_paths,out_path)
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     import argparse
     import traceback
+    import json
 
     parser = argparse.ArgumentParser(description="Tetralogy of Fallot - TOF: Segmentation and quantification of cardiac MRI data of TOF.")
     parser.add_argument('--src_path', type=str, required=True, help="Path to the source directory containing the MRI input data.")
     parser.add_argument('--dst_path', type=str, required=True, help="Path to the destination directory where results will be saved.")
     parser.add_argument('--model_path', type=str, required=True, help="Path to the model file used for processing.")
-    parser.add_argument('--filter_series', type=str, default=None, 
-                        help="series descriptions of DICOM to filter. If specified, only data matching these series descriptions will be processed.")
     parser.add_argument('--num_workers', type=int, default=1, help="Number of workers to use for processing. Defaults to 1.")
+    parser.add_argument('--gpu', type=int, default=0, 
+                        help="GPU ID to use for processing. Set to -1 to use the CPU.")
+    parser.add_argument(
+        "--filters", 
+        nargs='*', 
+        help="Filters in the format key1=value1 key2=value2 ...",
+        default=[]
+    )
+
     args = parser.parse_args()
 
+    # Set the GPU or CPU for processing
+    if args.gpu == -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        print("Using CPU for processing.")
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+        print(f"Using GPU {args.gpu} for processing.")
 
     
-    cine_series = ['csBTFE_M2D','BTFE_M2D','SA CINE volledig', 'Cine SA']
     ref_spacing = np.array([1.5,1.5,3])
     ref_size = np.array([192,192,48])
 
     patient_dir = os.path.join(args.src_path,os.listdir(args.src_path)[0])
 
-    csv_file = os.path.join(args.dst_path,'results','CMR_quantification_UZL.csv')
+    csv_file = os.path.join(args.dst_path,'CMR_quantification_UZL.csv')
     os.makedirs(os.path.dirname(csv_file), exist_ok=True)
     if not os.path.exists(csv_file):
         fields = ['patient','time','serie','LV EDV [ml]','LV ESV [ml]','LV EF [%]','LV mass [g]','RV EDV [ml]','RV ESV [ml]','RV EF [%]','RV mass [g]']
@@ -431,18 +450,39 @@ if __name__ == '__main__':
             writer = csv.writer(file)
             writer.writerow(fields)
 
-    manager = DicomManager(directory=args.src_path, tags= ["PatientID", "SeriesDescription","SeriesNumber", "AcquisitionTime", "SliceLocation", "AcquisitionDate", "PixelSpacing", "InstanceNumber"], num_workers=args.num_workers, group_by='PatientID')
+    manager = DicomManager(directory=args.src_path, tags= ["ProtocolName","StudyDescription", "StudyID", "PatientName","SeriesInstanceUID", "StudyDate","PatientID", "SeriesDescription","SeriesNumber", "AcquisitionTime", "SliceLocation", "AcquisitionDate", "PixelSpacing", "InstanceNumber", "Modality"], num_workers=args.num_workers, group_by='SeriesInstanceUID')
 
-    def filter_cine_series(row):
-        if args.filter_series is not None:
-            return row.SeriesDescription in args.filter_series and row.AcquisitionTime is not None and row.SliceLocation is not None
-        else:
-            return row.AcquisitionTime is not None and row.SliceLocation is not None
+    filters = args.filters
+    filters.extend(["AcquisitionTime=.*", "SliceLocation=.*"])
+    filter_by = create_dicommanager_filter(filters)
+    instances_before_filtering = len(manager.df_dicom.obj)
+    manager.filter(filter_by)
+    instances_after_filtering = len(manager.df_dicom.obj)
+    filters_str=",".join(filters)
+    print(f"Applying filters: {filters_str}")
+    print(f"Number of instances before filtering: {instances_before_filtering}")
+    print(f"Number of instances after filtering: {instances_after_filtering}")
 
 
-    manager.filter(filter_cine_series)
 
-    if len(manager.df_dicom) == 0:
+    output_format_path = Path(args.dst_path) / '$PatientID$/$Modality$/$StudyDate$/$SeriesNumber$_$SeriesDescription$'
+
+    if not (output_format_path / "DCM").exists:
+        result = manager.export_to_folder_structure(output_format_path / "DCM")
+
+        if len(result["failed"]) > 0:
+            print("----------------------------------------------------------------")
+            print("The following DICOM files failed to be processed and copied:")
+            for failed_file in result["failed"]:
+                print(failed_file)
+            print("----------------------------------------------------------------")
+    else:
+        print("----------------------------------------------------------------")
+        print("The DICOM files have already been processed and copied to the destination directory.")
+        print("----------------------------------------------------------------")
+
+
+    if len(manager.df_dicom.obj) == 0:
         print("----------------------------------------------------------------")
         print("No DICOM files found in the specified directory.")
         print("Check if the description in 'filter_series' is correct.")
@@ -454,16 +494,17 @@ if __name__ == '__main__':
 
     # Print an overview of the patients found in the dataframe
     print("----------------------------------------------------------------")
-    print("Overview of patients found:")
-    for patient_id, df_dicom_patient in manager.df_dicom:
-        print(f"Patient ID: {patient_id}")
+    print("Overview of series found:")
+    for series_id, df_dicom_series in manager.df_dicom:
+        print(f"Series ID: {series_id}")
     print("----------------------------------------------------------------")
 
-    for patient_id, df_dicom_patient in manager.df_dicom:
-        out_path = os.path.join(args.dst_path, patient_id)
+    for series_id, df_dicom_series in manager.df_dicom:
+        out_path = extract_format(output_format_path.as_posix(), df_dicom_series.iloc[0].to_dict())
+        patient_id = df_dicom_series.iloc[0].PatientID
         os.makedirs(out_path, exist_ok=True)
         try:
-            predict_patient(patient_id, ref_spacing, ref_size, csv_file, df_dicom_patient, out_path, args.model_path)
+            predict_patient(patient_id, ref_spacing, ref_size, csv_file, df_dicom_series, out_path, args.model_path)
         except Exception as e:
             traceback.print_exc()
             print(f"Prediction for patient {patient_id} failed: {e}")
@@ -475,6 +516,29 @@ if __name__ == '__main__':
 
     print('All patients predicted')
 
+
+    # print all patients from dicommanager to json
+    # Dump the required fields for each series in the DICOM manager as a JSON to the command prompt
+    dicom_data = []
+    for series_id, df_dicom_series in manager.df_dicom:
+        first_row = df_dicom_series.iloc[0]
+        dicom_data.append({
+            "patient_name": str(first_row.get("PatientName", "N/A")),
+            "patient_id": str(first_row.get("PatientID", "N/A")),
+            "study_id": str(first_row.get("StudyID", "N/A")),
+            "study_description": first_row.get("StudyDescription", "N/A"),
+            "study_date": str(first_row.get("StudyDate", "N/A")),
+            "acquisition_date": str(first_row.get("AcquisitionDate", "N/A")),
+            "protocol": first_row.get("ProtocolName", "N/A"),
+            "modality": first_row.get("Modality", "N/A"),
+            "series_number": int(first_row.get("SeriesNumber", -1)) if not pd.isna(first_row.get("SeriesNumber")) else "N/A",
+            "series_description": first_row.get("SeriesDescription", "N/A"),
+            "series_instance_uid": str(first_row.get("SeriesInstanceUID", "N/A"))
+        })
+    print("###---###")
+    # Print the JSON to the command prompt
+    print(json.dumps(dicom_data))
+    print("###---###")
 
 
 
